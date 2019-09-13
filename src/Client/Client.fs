@@ -3,8 +3,11 @@ module Client
 open Elmish
 open Elmish.React
 open Feliz
+open Types
 
-type Model = unit
+type Model = {
+    Game: Game
+}
 
 type Msg = unit
 
@@ -21,7 +24,7 @@ type Msg = unit
 // let initialCounter = Server.api.initialCounter
 
 // defines the initial state and initial command (= side-effect) of the application
-let init () : Model * Cmd<Msg> = (), Cmd.none
+let init () : Model * Cmd<Msg> = { Game = Game.intialGame }, Cmd.none
 
 let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> = currentModel, Cmd.none
 
@@ -36,30 +39,29 @@ module List =
             }
         inner false list |> Seq.toList
 
-module Components =
+    let ofMap map = map |> Map.toList |> List.map snd
+
+module ViewHelpers =
     let container' (classes: string list) (children: Fable.React.ReactElement list) =
         Html.div [
             prop.classes classes
             prop.children children
         ]
+    let container (className: string) = container' [className]
 
-    let container (className: string) =container' [className]
+module Components =
+    open ViewHelpers
 
     let building x =
-        let classes = ["building"; (sprintf "building-%i" x)]
-        Html.div [
-            prop.classes classes
-        ]
+        container' ["building"; (sprintf "building-%i" x)] []
 
     let skyline = container "skyline" [for i in 0 .. 15 do yield building i]
 
-    let dieFaces = [ "punch"; "shield"; "shovel"; "punch"; "heal"; "skull"]
     let dieWLock die =
         container "die-w-lock" [
             container "die" [
-                container "cube" [
-                    for i in 0 .. 5 do yield container' ["face"; sprintf "face-%i" i; dieFaces.[i]] []
-                ]
+                container "cube"
+                    (die.Faces |> List.mapi (fun i f -> container' ["face"; sprintf "face-%i" i; f.ClassName] []))
                 container "clamp" [
                     container "lock" [
                         container "padlock" []
@@ -68,19 +70,19 @@ module Components =
             ]
         ]
 
-    let diceRow dice =
+    let rollsView {Max = maxRolls; Used = usedRolls} =
+        let rollClasses i = if i < usedRolls then ["roll"; "used"] else ["roll"]
+        container "rolls"
+            [ for i in 0 .. (maxRolls-1) do yield container' (rollClasses i) []]
+
+    let diceRow dice rolls =
         let dieList =
             dice
             |> List.map dieWLock
             |> List.interpose (container "dice-spacing" [])
 
-        printfn "Die list: %A" dieList
-
-        let rolls =
-            container "rolls" [ for i in 0 .. 2 do yield container "roll" []]
-
         let children = dieList @ [
-            rolls
+            rollsView rolls
         ]
 
         container "dice-row" children
@@ -94,27 +96,26 @@ module Components =
             ]
         container "zombie-health" hearts
 
-    let zombie id maxHealth lostHealth =
+    let zombieView zombie =
         container "zombie-position" [
-            container' ["zombie"; id] [zombieHealth maxHealth lostHealth]
+            container' ["zombie"; zombie.ZombieId] [zombieHealth zombie.MaxHealth zombie.LostHealth]
         ]
 
-    let zombies = container "zombies" [zombie "zombie-1" 5 3]
+    let zombiesView zombies =
+        container "zombies" (zombies |> List.ofMap |> List.map zombieView)
 
-    let surface = container "surface" [skyline; zombies; diceRow [0 .. 4]]
+    let surfaceView zombies dice rolls = container "surface" [skyline; zombies; diceRow dice rolls]
 
-    let page = container "page" [surface]
+    let gameView zombies dice rolls =
+        surfaceView (zombiesView zombies) dice rolls
+
+    let pageView model =
+        let {Zombies = zombies; Dice = dice; Rolls = rolls} = model.Game
+        container "page" [gameView zombies (dice |> List.ofMap) rolls]
 
 open Components
 
-let view (model : Model) (dispatch : Msg -> unit) =
-
-    Html.div [
-        prop.className "page"
-        prop.children [
-            surface
-        ]
-    ]
+let view (model : Model) (dispatch : Msg -> unit) = pageView model
 
 #if DEBUG
 open Elmish.Debug
